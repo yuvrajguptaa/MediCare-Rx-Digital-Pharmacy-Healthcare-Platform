@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+package-lock.json
+
+# Production build
+dist/
+frontend/dist/
+build/
+
+# Python & Django
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+backend/db.sqlite3
+*.log
+
+# Environments & Secrets
+.env
+.env.local
+.env.*.local
+venv/
+env/
+ENV/
+.venv/
+
+# Media Uploads (keep directory structure)
+backend/media/prescriptions/*
+!backend/media/prescriptions/.gitkeep
+
+# IDEs & Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
