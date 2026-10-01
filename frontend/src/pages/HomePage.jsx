@@ -230,7 +230,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            {featured.offers.slice(0, 4).map((med) => (
+            {(featured?.offers || []).slice(0, 4).map((med) => (
               <MedicineCard key={med.id || med._id} medicine={med} />
             ))}
           </div>
@@ -253,7 +253,7 @@ export default function HomePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-          {featured.popular.slice(0, 8).map((med) => (
+          {(featured?.popular || []).slice(0, 8).map((med) => (
             <MedicineCard key={med.id || med._id} medicine={med} />
           ))}
         </div>
@@ -275,7 +275,7 @@ export default function HomePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-          {featured.otc_essentials.slice(0, 4).map((med) => (
+          {(featured?.otc_essentials || []).slice(0, 4).map((med) => (
             <MedicineCard key={med.id || med._id} medicine={med} />
           ))}
         </div>

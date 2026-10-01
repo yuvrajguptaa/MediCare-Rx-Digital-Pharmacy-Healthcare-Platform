@@ -290,12 +290,12 @@ export default function Navbar() {
                     )}
                   </div>
                   <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
-                    {notifications.length === 0 ? (
+                    {(notifications || []).length === 0 ? (
                       <div className="p-6 text-center text-slate-400 text-xs">
                         No notifications yet.
                       </div>
                     ) : (
-                      notifications.slice(0, 5).map((n) => (
+                      (notifications || []).slice(0, 5).map((n) => (
                         <div
                           key={n.id || n._id}
                           onClick={() => {
@@ -505,7 +505,7 @@ export default function Navbar() {
           >
             All Medicines (50+)
           </Link>
-          {categories.slice(0, 8).map((cat) => (
+          {(categories || []).slice(0, 8).map((cat) => (
             <Link
               key={cat.id || cat._id || cat.slug}
               to={`/medicines?category=${encodeURIComponent(cat.name)}`}
