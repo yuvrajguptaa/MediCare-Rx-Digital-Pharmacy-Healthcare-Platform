@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://medicare-rx-digital-pharmacy-healthcare.onrender.com/api/v1';
+let rawApiUrl = import.meta.env.VITE_API_URL || 'https://medicare-rx-digital-pharmacy-healthcare.onrender.com/api/v1';
+rawApiUrl = rawApiUrl.replace(/\/+$/, ''); // remove trailing slash
+if (!rawApiUrl.endsWith('/api/v1')) {
+  rawApiUrl = `${rawApiUrl}/api/v1`;
+}
+const API_BASE_URL = rawApiUrl;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
