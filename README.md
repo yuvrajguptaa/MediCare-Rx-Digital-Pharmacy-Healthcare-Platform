@@ -22,6 +22,12 @@ The database comes pre-seeded with realistic healthcare medicines, categories, p
 | 🧑‍💼 **Customer (User)** | `user@medicare.com` | `Password123!` | Catalog, Cart, Rx Upload, Checkout, Orders Tracking, Reviews |
 | 💊 **Pharmacist** | `pharmacist@medicare.com` | `Password123!` | Prescriptions Verification, Order Fulfillment, Stock Management |
 | 🛡️ **Administrator** | `admin@medicare.com` | `Password123!` | Full Admin Analytics, User Management, Coupons, Category CRUD |
+Demo Accounts for Testing
+Role	Email	Password	Landing Page
+Customer	user@medicare.com	Password123!	/orders
+Admin / Pharmacist	admin@medicare.com	Password123!	/admin/orders
+Delivery Rider 1	delivery@medicare.com	Password123!	/delivery
+Delivery Rider 2	delivery2@medicare.com	Password123!	/delivery
 
 *(Note: The login page includes quick 1-click buttons to instantly fill and sign in with any role!)*
 
