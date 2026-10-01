@@ -84,6 +84,10 @@ class MongoUser:
     def is_pharmacist(self):
         return self.role in ['PHARMACIST', 'ADMIN']
 
+    @property
+    def is_delivery_partner(self):
+        return self.role == 'DELIVERY_PARTNER'
+
     def to_dict(self):
         clean = serialize_doc(self.doc)
         if 'password_hash' in clean:
@@ -130,3 +134,11 @@ class IsAdminUserMongo(BasePermission):
 class IsPharmacistOrAdminUserMongo(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and getattr(request.user, 'is_authenticated', False) and getattr(request.user, 'role', '') in ['PHARMACIST', 'ADMIN'])
+
+class IsDeliveryPartnerMongo(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and getattr(request.user, 'is_authenticated', False) and getattr(request.user, 'role', '') in ['DELIVERY_PARTNER', 'ADMIN'])
+
+class IsStaffOrDeliveryPartnerMongo(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and getattr(request.user, 'is_authenticated', False) and getattr(request.user, 'role', '') in ['ADMIN', 'PHARMACIST', 'DELIVERY_PARTNER'])

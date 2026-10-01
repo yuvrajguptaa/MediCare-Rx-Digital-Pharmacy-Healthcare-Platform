@@ -84,6 +84,7 @@ export const AuthProvider = ({ children }) => {
 
   const isAdmin = user?.role === 'ADMIN';
   const isPharmacist = user?.role === 'PHARMACIST' || user?.role === 'ADMIN';
+  const isDeliveryPartner = user?.role === 'DELIVERY_PARTNER' || user?.role === 'ADMIN';
   const isAuthenticated = !!user;
 
   return (
@@ -94,6 +95,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated,
         isAdmin,
         isPharmacist,
+        isDeliveryPartner,
         login,
         register,
         logout,

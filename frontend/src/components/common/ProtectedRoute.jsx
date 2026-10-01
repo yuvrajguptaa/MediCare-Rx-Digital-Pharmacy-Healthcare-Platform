@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export default function ProtectedRoute({ children, requiredRole = null }) {
-  const { user, loading, isAuthenticated, isAdmin, isPharmacist } = useAuth();
+  const { user, loading, isAuthenticated, isAdmin, isPharmacist, isDeliveryPartner } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -23,6 +23,10 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
   }
 
   if (requiredRole === 'PHARMACIST' && !isPharmacist) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (requiredRole === 'DELIVERY_PARTNER' && !isDeliveryPartner) {
     return <Navigate to="/" replace />;
   }
 

@@ -4,7 +4,9 @@ from .views import (
     AdminMedicineListCreateView, AdminMedicineDetailView,
     AdminMedicineBulkUploadView, AdminMedicineCSVTemplateView,
     AdminCategoryListCreateView, AdminCategoryDetailView,
-    AdminOrdersListView, AdminOrderStatusUpdateView,
+    AdminOrdersListView, AdminOrderDetailView, AdminOrderStatusUpdateView,
+    AdminPackingUpdateView, AdminMarkReadyForPickupView,
+    AdminDeliveryPartnersListView, AdminAssignDeliveryPartnerView,
     AdminCouponListCreateView, AdminCouponDetailView,
     AdminReviewsListView, AdminInventoryOverviewView
 )
@@ -23,8 +25,16 @@ urlpatterns = [
     path('admin/medicines/<str:pk>/', AdminMedicineDetailView.as_view(), name='admin_medicine_detail'),
     path('admin/categories/', AdminCategoryListCreateView.as_view(), name='admin_categories_list_create'),
     path('admin/categories/<str:pk>/', AdminCategoryDetailView.as_view(), name='admin_category_detail'),
+    
+    # Orders, Packing & Delivery Assignment
     path('admin/orders/', AdminOrdersListView.as_view(), name='admin_orders_list'),
+    path('admin/orders/<str:pk>/', AdminOrderDetailView.as_view(), name='admin_order_detail'),
     path('admin/orders/<str:pk>/status/', AdminOrderStatusUpdateView.as_view(), name='admin_order_status_update'),
+    path('admin/orders/<str:pk>/packing/', AdminPackingUpdateView.as_view(), name='admin_order_packing_update'),
+    path('admin/orders/<str:pk>/mark-ready/', AdminMarkReadyForPickupView.as_view(), name='admin_order_mark_ready'),
+    path('admin/delivery-partners/', AdminDeliveryPartnersListView.as_view(), name='admin_delivery_partners_list'),
+    path('admin/orders/<str:pk>/assign-delivery/', AdminAssignDeliveryPartnerView.as_view(), name='admin_order_assign_delivery'),
+
     path('admin/coupons/', AdminCouponListCreateView.as_view(), name='admin_coupons_list_create'),
     path('admin/coupons/<str:pk>/', AdminCouponDetailView.as_view(), name='admin_coupon_detail'),
     path('admin/reviews/', AdminReviewsListView.as_view(), name='admin_reviews_list'),

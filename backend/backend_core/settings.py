@@ -109,9 +109,9 @@ REST_FRAMEWORK = {
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
 MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'pharmacy_db')
 
-# Razorpay (optional/mock mode supported)
-RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', 'rzp_test_mock_pharmacy_key')
-RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', 'rzp_test_mock_secret_key')
+# Razorpay (Live/Test keys)
+RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', 'rzp_test_RrD9fB8nXJ3BVC')
+RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', 'ZQqtFRiMSATxihDdrrSVcW6f')
 
 # Gemini API (optional / fallback supported)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')

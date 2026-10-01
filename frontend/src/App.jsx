@@ -34,23 +34,27 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminMedicines from './pages/admin/AdminMedicines';
 import AdminPrescriptions from './pages/admin/AdminPrescriptions';
 import AdminOrders from './pages/admin/AdminOrders';
+import AdminOrderDetail from './pages/admin/AdminOrderDetail';
 import AdminInventory from './pages/admin/AdminInventory';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminCoupons from './pages/admin/AdminCoupons';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminReviews from './pages/admin/AdminReviews';
 
+// Delivery Portal
+import DeliveryDashboard from './pages/delivery/DeliveryDashboard';
+
 function AppLayout({ children }) {
   const location = useLocation();
-  const isAdminPath = location.pathname.startsWith('/admin');
+  const isSpecialLayout = location.pathname.startsWith('/admin') || location.pathname.startsWith('/delivery');
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-emerald-500 selection:text-white">
-      {!isAdminPath && <Navbar />}
+      {!isSpecialLayout && <Navbar />}
       <div className="flex-1">
         {children}
       </div>
-      {!isAdminPath && <Footer />}
+      {!isSpecialLayout && <Footer />}
     </div>
   );
 }
@@ -144,6 +148,16 @@ export default function App() {
                   }
                 />
 
+                {/* Delivery Partner Portal */}
+                <Route
+                  path="/delivery"
+                  element={
+                    <ProtectedRoute requiredRole="DELIVERY_PARTNER">
+                      <DeliveryDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+
                 {/* Admin & Pharmacist Portal */}
                 <Route
                   path="/admin"
@@ -157,6 +171,7 @@ export default function App() {
                   <Route path="medicines" element={<AdminMedicines />} />
                   <Route path="prescriptions" element={<AdminPrescriptions />} />
                   <Route path="orders" element={<AdminOrders />} />
+                  <Route path="orders/:id" element={<AdminOrderDetail />} />
                   <Route path="inventory" element={<AdminInventory />} />
                   <Route path="categories" element={<AdminCategories />} />
                   <Route path="coupons" element={<AdminCoupons />} />

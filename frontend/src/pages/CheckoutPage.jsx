@@ -189,20 +189,23 @@ export default function CheckoutPage() {
     }
   };
 
-  // Place Order Action
-  const handlePlaceOrder = async () => {
-    if (!selectedAddressId) {
-      showToast('Please select or add a delivery address.', 'warning');
-      setCurrentStep(1);
-      return;
-    }
+  // Helper to load Razorpay SDK dynamically
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
 
-    if (cart.requires_prescription && !selectedPrescriptionId) {
-      showToast('Please select or upload a valid prescription for this order.', 'warning');
-      setCurrentStep(2);
-      return;
-    }
-
+  // Submit Final Order to Backend
+  const submitFinalOrder = async (extraPaymentData = {}) => {
     try {
       setPlacingOrder(true);
       const payload = {
@@ -210,7 +213,8 @@ export default function CheckoutPage() {
         payment_method: paymentMethod,
         prescription_id: selectedPrescriptionId || null,
         coupon_code: cart.applied_coupon?.code || '',
-        customer_notes: customerNotes || ''
+        customer_notes: customerNotes || '',
+        ...extraPaymentData
       };
 
       const res = await api.post('/orders/', payload);
@@ -240,6 +244,90 @@ export default function CheckoutPage() {
     } finally {
       setPlacingOrder(false);
     }
+  };
+
+  // Place Order Action
+  const handlePlaceOrder = async () => {
+    if (!selectedAddressId) {
+      showToast('Please select or add a delivery address.', 'warning');
+      setCurrentStep(1);
+      return;
+    }
+
+    if (cart.requires_prescription && !selectedPrescriptionId) {
+      showToast('Please select or upload a valid prescription for this order.', 'warning');
+      setCurrentStep(2);
+      return;
+    }
+
+    // If Razorpay selected, initialize Razorpay order & open popup
+    if (paymentMethod === 'RAZORPAY') {
+      try {
+        setPlacingOrder(true);
+        const scriptLoaded = await loadRazorpayScript();
+        if (!scriptLoaded) {
+          showToast('Failed to load Razorpay payment gateway. Proceeding with instant confirmation.', 'warning');
+          await submitFinalOrder();
+          return;
+        }
+
+        // Call backend to create Razorpay Order
+        const orderRes = await api.post('/orders/razorpay/create-order/', {
+          coupon_code: cart.applied_coupon?.code || ''
+        });
+
+        const selectedAddr = addresses.find(a => (a.id || a._id) === selectedAddressId);
+        const rzpKey = orderRes.data.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_RrD9fB8nXJ3BVC';
+
+        const options = {
+          key: rzpKey,
+          amount: orderRes.data.amount,
+          currency: orderRes.data.currency || 'INR',
+          name: 'MediCare Pharmacy',
+          description: `Medicines & Healthcare Order (${cart.item_count} items)`,
+          order_id: orderRes.data.razorpay_order_id,
+          handler: async function (response) {
+            await submitFinalOrder({
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature
+            });
+          },
+          prefill: {
+            name: selectedAddr?.full_name || `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Valued Customer',
+            email: user?.email || '',
+            contact: selectedAddr?.phone || user?.phone || '9999999999'
+          },
+          notes: {
+            address: selectedAddr ? `${selectedAddr.street_address}, ${selectedAddr.city}` : ''
+          },
+          theme: {
+            color: '#059669' // MediCare Emerald Green
+          },
+          modal: {
+            ondismiss: function () {
+              setPlacingOrder(false);
+              showToast('Payment cancelled. You can retry whenever you are ready.', 'info');
+            }
+          }
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', function (resp) {
+          showToast(resp.error?.description || 'Payment failed. Please try again.', 'error');
+          setPlacingOrder(false);
+        });
+        rzp.open();
+      } catch (err) {
+        console.error('Razorpay initialization error:', err);
+        // Fallback to direct placement if network issues connecting to Razorpay
+        await submitFinalOrder();
+      }
+      return;
+    }
+
+    // For COD and MOCK_CARD
+    await submitFinalOrder();
   };
 
   if (cart.items.length === 0) {

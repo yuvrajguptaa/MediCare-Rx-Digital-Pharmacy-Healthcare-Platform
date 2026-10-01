@@ -108,6 +108,11 @@ export default function Navbar() {
                 Pharmacist Mode
               </span>
             )}
+            {user?.role === 'DELIVERY_PARTNER' && (
+              <span className="bg-indigo-300 text-slate-900 font-bold px-2 py-0.5 rounded text-[10px] tracking-wider uppercase">
+                Delivery Partner
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -381,6 +386,16 @@ export default function Navbar() {
                         >
                           <PackageCheck className="w-4 h-4 text-sky-600" />
                           Pharmacist Reviews
+                        </Link>
+                      )}
+                      {user?.role === 'DELIVERY_PARTNER' && (
+                        <Link
+                          to="/delivery"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-2 px-4 py-2 hover:bg-indigo-50 text-indigo-900 font-bold"
+                        >
+                          <PackageCheck className="w-4 h-4 text-indigo-600" />
+                          Delivery Dashboard
                         </Link>
                       )}
                       <Link

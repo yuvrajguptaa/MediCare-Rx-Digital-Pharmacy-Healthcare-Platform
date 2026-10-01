@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Package, Truck, CheckCircle2, Clock, AlertTriangle, Printer,
-  RotateCcw, XCircle, ArrowLeft, ShieldCheck, MapPin, CreditCard
+  RotateCcw, XCircle, ArrowLeft, ShieldCheck, MapPin, CreditCard,
+  Phone, UserCheck, KeyRound, RefreshCw, FileText
 } from 'lucide-react';
 import api from '../api/client';
 import { useNotifications } from '../context/NotificationContext';
@@ -11,11 +12,12 @@ import BackButton from '../components/common/BackButton';
 
 const TIMELINE_STEPS = [
   { key: 'PLACED', label: 'Order Placed', desc: 'Received & logged' },
-  { key: 'CONFIRMED', label: 'Confirmed', desc: 'Payment / Rx verified' },
-  { key: 'PACKED', label: 'Packed', desc: 'Sealed in pharmacy package' },
-  { key: 'SHIPPED', label: 'Shipped', desc: 'Handed to express courier' },
-  { key: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', desc: 'Rider on the way' },
-  { key: 'DELIVERED', label: 'Delivered', desc: 'Delivered to recipient' }
+  { key: 'CONFIRMED', label: 'Confirmed', desc: 'Prescription & Payment verified' },
+  { key: 'PACKING', label: 'Packing', desc: 'Items checked & sealed' },
+  { key: 'READY_FOR_PICKUP', label: 'Ready for Pickup', desc: 'Packed at pharmacy hub' },
+  { key: 'PICKED_UP', label: 'Picked Up', desc: 'Rider picked up parcel' },
+  { key: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', desc: 'Rider arriving at doorstep' },
+  { key: 'DELIVERED', label: 'Delivered', desc: 'Delivered with OTP' }
 ];
 
 export default function OrderDetailPage() {
@@ -31,17 +33,24 @@ export default function OrderDetailPage() {
 
   useEffect(() => {
     fetchOrder();
+    // Live polling every 15s if order is in progress
+    const interval = setInterval(() => {
+      fetchOrder(false);
+    }, 15000);
+    return () => clearInterval(interval);
   }, [id]);
 
-  const fetchOrder = () => {
-    setLoading(true);
+  const fetchOrder = (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     api.get(`/orders/${id}/`)
       .then(res => setOrder(res.data?.order))
       .catch(err => {
         console.error(err);
-        showToast('Order not found', 'error');
+        if (showSpinner) showToast('Order not found', 'error');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (showSpinner) setLoading(false);
+      });
   };
 
   const handleCancelOrder = async () => {
@@ -97,10 +106,16 @@ export default function OrderDetailPage() {
   }
 
   const isCancelled = order.order_status === 'CANCELLED';
-  const canCancel = ['PLACED', 'CONFIRMED'].includes(order.order_status);
+  const isDelivered = order.order_status === 'DELIVERED';
+  const canCancel = ['PLACED', 'PENDING', 'CONFIRMED'].includes(order.order_status);
 
-  // Determine current step index
-  const stepIndex = TIMELINE_STEPS.findIndex(s => s.key === order.order_status);
+  // Normalize current step index
+  let normalizedStatus = order.order_status;
+  if (normalizedStatus === 'PENDING') normalizedStatus = 'PLACED';
+  if (normalizedStatus === 'PREPARING') normalizedStatus = 'PACKING';
+  if (normalizedStatus === 'ASSIGNED') normalizedStatus = 'READY_FOR_PICKUP';
+
+  const stepIndex = TIMELINE_STEPS.findIndex(s => s.key === normalizedStatus);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 print:p-0">
@@ -109,6 +124,13 @@ export default function OrderDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 print:hidden">
         <BackButton fallbackUrl="/orders" label="Back to My Orders" />
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => fetchOrder(true)}
+            className="p-2 text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+            title="Refresh order status"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
           <button
             onClick={handlePrint}
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
@@ -135,7 +157,7 @@ export default function OrderDetailPage() {
       </div>
 
       {/* Order Header Summary Card */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
             <span className="text-xs text-slate-400 font-mono">ORDER IDENTIFIER</span>
@@ -156,9 +178,32 @@ export default function OrderDetailPage() {
           </span>
         </div>
 
+        {/* Security Delivery OTP Banner */}
+        {!isCancelled && !isDelivered && (
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3 text-emerald-900 text-center sm:text-left">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                <KeyRound className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-emerald-950">Doorstep Delivery Security OTP</h3>
+                <p className="text-xs text-emerald-700">
+                  Share this 4-digit secret OTP with your delivery partner only upon physically receiving your parcel.
+                </p>
+              </div>
+            </div>
+            <div className="bg-white px-5 py-2.5 rounded-xl border-2 border-dashed border-emerald-400 text-center shadow-xs">
+              <span className="text-[10px] uppercase tracking-wider text-emerald-600 font-bold block">Delivery OTP</span>
+              <span className="text-2xl font-black font-mono tracking-widest text-emerald-700">
+                {order.delivery_otp || '----'}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Visual Logistics Tracking Stepper */}
         {!isCancelled ? (
-          <div className="py-6">
+          <div className="py-4">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-6">
               Live Logistics Stepper
             </h3>
@@ -171,10 +216,23 @@ export default function OrderDetailPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 relative z-10">
+              <div className="grid grid-cols-2 sm:grid-cols-7 gap-3 relative z-10">
                 {TIMELINE_STEPS.map((step, idx) => {
                   const isPassed = stepIndex >= idx;
                   const isCurrent = stepIndex === idx;
+
+                  // Get timestamp for step if exists
+                  const tsKey = {
+                    PLACED: 'placed_at',
+                    CONFIRMED: 'confirmed_at',
+                    PACKING: 'packing_started_at',
+                    READY_FOR_PICKUP: 'ready_for_pickup_at',
+                    PICKED_UP: 'picked_up_at',
+                    OUT_FOR_DELIVERY: 'out_for_delivery_at',
+                    DELIVERED: 'delivered_at'
+                  }[step.key];
+
+                  const timestamp = order.timestamps?.[tsKey];
 
                   return (
                     <div key={step.key} className="flex sm:flex-col items-center sm:text-center gap-3 sm:gap-2">
@@ -192,6 +250,11 @@ export default function OrderDetailPage() {
                           {step.label}
                         </p>
                         <p className="text-[10px] text-slate-400 hidden sm:block mt-0.5">{step.desc}</p>
+                        {timestamp && (
+                          <span className="text-[9px] text-emerald-600 font-medium block mt-0.5">
+                            {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -250,7 +313,14 @@ export default function OrderDetailPage() {
                     <Link to={`/medicines/${it.medicine_id}`} className="font-bold text-xs text-slate-900 hover:underline">
                       {it.name}
                     </Link>
-                    <p className="text-[11px] text-slate-500">₹{it.selling_price} x {it.quantity} units</p>
+                    <p className="text-[11px] text-slate-500">
+                      ₹{it.selling_price} {it.mrp && it.mrp > it.selling_price && <span className="line-through text-slate-400">₹{it.mrp}</span>} × {it.quantity} units
+                    </p>
+                    {it.requires_prescription && (
+                      <span className="inline-block mt-0.5 px-1.5 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded border border-amber-200">
+                        Rx Verified
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span className="font-bold text-xs text-slate-900">₹{it.item_total_selling}</span>
@@ -280,8 +350,33 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* Address & Payment Info */}
+        {/* Address & Delivery Partner & Payment Info */}
         <div className="lg:col-span-4 space-y-6">
+          {/* Delivery Partner Card if assigned */}
+          {order.delivery_partner?.name && (
+            <div className="bg-emerald-900 text-white p-6 rounded-3xl shadow-sm space-y-3">
+              <h4 className="font-bold text-xs uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+                <Truck className="w-4 h-4 text-emerald-300" />
+                Assigned Delivery Partner
+              </h4>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-white text-sm">{order.delivery_partner.name}</p>
+                  <p className="text-xs text-emerald-200">{order.delivery_partner.phone || 'Verified Delivery Agent'}</p>
+                </div>
+                {order.delivery_partner.phone && (
+                  <a
+                    href={`tel:${order.delivery_partner.phone}`}
+                    className="p-2.5 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-white transition-colors"
+                    title="Call Delivery Partner"
+                  >
+                    <Phone className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
             <h4 className="font-bold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
               <MapPin className="w-4 h-4 text-emerald-600" />
@@ -307,7 +402,7 @@ export default function OrderDetailPage() {
               </div>
               <div className="flex justify-between">
                 <span>Status:</span>
-                <strong className="text-emerald-700">{order.payment_status}</strong>
+                <strong className="text-emerald-700 uppercase">{order.payment_status}</strong>
               </div>
               {order.payment_details?.transaction_id && (
                 <div className="flex justify-between font-mono text-[10px] text-slate-500">

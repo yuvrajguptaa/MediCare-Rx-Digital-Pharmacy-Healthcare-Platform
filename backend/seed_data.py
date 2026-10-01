@@ -163,6 +163,46 @@ def seed_database():
             "created_at": datetime.datetime.utcnow() - datetime.timedelta(days=80),
             "updated_at": datetime.datetime.utcnow()
         },
+        # 3 Delivery Partners
+        {
+            "email": "delivery@medicare.com",
+            "password_hash": common_pwd,
+            "first_name": "Amit",
+            "last_name": "Kumar",
+            "phone": "+91 98980 11223",
+            "role": "DELIVERY_PARTNER",
+            "vehicle": "Honda Activa 6G (MH-02-CD-4589)",
+            "is_active": True,
+            "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=delivery_amit",
+            "created_at": datetime.datetime.utcnow() - datetime.timedelta(days=70),
+            "updated_at": datetime.datetime.utcnow()
+        },
+        {
+            "email": "delivery2@medicare.com",
+            "password_hash": common_pwd,
+            "first_name": "Rahul",
+            "last_name": "Singh",
+            "phone": "+91 98765 22334",
+            "role": "DELIVERY_PARTNER",
+            "vehicle": "TVS Jupiter (MH-01-AB-1234)",
+            "is_active": True,
+            "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=delivery_rahul",
+            "created_at": datetime.datetime.utcnow() - datetime.timedelta(days=65),
+            "updated_at": datetime.datetime.utcnow()
+        },
+        {
+            "email": "delivery3@medicare.com",
+            "password_hash": common_pwd,
+            "first_name": "Mohit",
+            "last_name": "Sharma",
+            "phone": "+91 98112 33445",
+            "role": "DELIVERY_PARTNER",
+            "vehicle": "Hero Splendor Plus (MH-03-EF-7890)",
+            "is_active": True,
+            "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=delivery_mohit",
+            "created_at": datetime.datetime.utcnow() - datetime.timedelta(days=60),
+            "updated_at": datetime.datetime.utcnow()
+        },
         {
             "email": "user@medicare.com",
             "password_hash": common_pwd,
@@ -761,29 +801,38 @@ def seed_database():
     rx_ids = [str(r) for r in res_rx.inserted_ids]
     print(f"✅ Seeded {len(prescriptions_data)} Prescriptions (Approved, Pending, Rejected).")
 
-    # 7. ORDERS (10 Sample Orders with realistic items and tracking histories)
+    # 7. ORDERS (12 Sample Orders across all lifecycle states)
     orders_data = []
-    statuses = ['DELIVERED', 'SHIPPED', 'PACKED', 'CONFIRMED', 'PLACED', 'DELIVERED', 'DELIVERED', 'OUT_FOR_DELIVERY', 'CONFIRMED', 'DELIVERED']
-
-    demo_med_items = [
-        {"med": medicines_docs[0], "qty": 2}, # Augmentin
-        {"med": medicines_docs[5], "qty": 3}, # Dolo 650
-        {"med": medicines_docs[26], "qty": 1}, # Becosules
-        {"med": medicines_docs[38], "qty": 1}, # Digene
+    statuses = [
+        'CONFIRMED', 'PACKING', 'READY_FOR_PICKUP', 'ASSIGNED',
+        'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'DELIVERED',
+        'CONFIRMED', 'DELIVERED', 'CANCELLED', 'OUT_FOR_DELIVERY'
     ]
 
-    for i in range(10):
-        ord_num = f"MED-202609-{random.randint(100000, 999999)}"
-        cur_status = statuses[i]
+    # Find the primary delivery partner
+    delivery_rider = db.users.find_one({'email': 'delivery@medicare.com'})
+    rider_partner_info = {
+        'id': str(delivery_rider['_id']),
+        'name': f"{delivery_rider['first_name']} {delivery_rider['last_name']}",
+        'phone': delivery_rider['phone'],
+        'email': delivery_rider['email'],
+        'vehicle': delivery_rider.get('vehicle', 'Honda Activa 6G (MH-02-CD-4589)')
+    } if delivery_rider else None
+
+    for i in range(12):
+        ord_num = f"ORD-202609-{random.randint(1000, 9999)}"
+        cur_status = statuses[i % len(statuses)]
         order_user_id = demo_user_id if i < 4 else user_ids[3 + (i % 7)]
         user_info = db.users.find_one({'_id': ObjectId(order_user_id)})
         
         # Pick 2-3 items
-        chosen_sample = random.sample(medicines_docs, 2)
+        chosen_sample = random.sample(medicines_docs, random.randint(2, 3))
         items_list = []
         sub_mrp = 0
         sub_selling = 0
-        for m in chosen_sample:
+        is_packed = cur_status in ['READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']
+
+        for it_idx, m in enumerate(chosen_sample):
             q = random.randint(1, 2)
             item_mrp = m['mrp'] * q
             item_sp = m['selling_price'] * q
@@ -792,10 +841,10 @@ def seed_database():
             items_list.append({
                 "medicine_id": str(m['_id']) if '_id' in m else medicine_ids[random.randint(0, len(medicine_ids)-1)],
                 "name": m['name'],
-                "generic_name": m['generic_name'],
-                "brand": m['brand'],
-                "category": m['category'],
-                "image": m['images'][0],
+                "generic_name": m.get('generic_name', ''),
+                "brand": m.get('brand', ''),
+                "category": m.get('category', ''),
+                "image": m['images'][0] if m.get('images') else 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=100',
                 "mrp": m['mrp'],
                 "selling_price": m['selling_price'],
                 "discount": m['discount'],
@@ -804,7 +853,8 @@ def seed_database():
                 "is_available": True,
                 "prescription_required": m['prescription_required'],
                 "item_total_mrp": round(item_mrp, 2),
-                "item_total_selling": round(item_sp, 2)
+                "item_total_selling": round(item_sp, 2),
+                "packed": is_packed or (cur_status == 'PACKING' and it_idx == 0)
             })
 
         coupon_disc = 20.0 if i % 2 == 0 else 0.0
@@ -813,18 +863,31 @@ def seed_database():
         ord_date = datetime.datetime.utcnow() - datetime.timedelta(days=(12 - i))
 
         history = [
-            {"status": "PLACED", "timestamp": ord_date, "note": "Order placed successfully."}
+            {"status": "PLACED", "timestamp": ord_date, "note": "Order placed successfully.", "updated_by": "System"}
         ]
-        if cur_status in ['CONFIRMED', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED']:
-            history.append({"status": "CONFIRMED", "timestamp": ord_date + datetime.timedelta(hours=2), "note": "Order confirmed and verified."})
-        if cur_status in ['PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED']:
-            history.append({"status": "PACKED", "timestamp": ord_date + datetime.timedelta(hours=6), "note": "Packed in sterile tamper-proof packaging."})
-        if cur_status in ['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED']:
-            history.append({"status": "SHIPPED", "timestamp": ord_date + datetime.timedelta(hours=14), "note": "Handed over to Express Courier (Tracking: EXP-99881)."})
+        if cur_status in ['CONFIRMED', 'PACKING', 'READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']:
+            history.append({"status": "CONFIRMED", "timestamp": ord_date + datetime.timedelta(minutes=5), "note": "Order confirmed and verified.", "updated_by": "System"})
+        if cur_status in ['PACKING', 'READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']:
+            history.append({"status": "PACKING", "timestamp": ord_date + datetime.timedelta(minutes=20), "note": "Packing initiated in sterile facility.", "updated_by": "Dr. Sarah"})
+        if cur_status in ['READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']:
+            history.append({"status": "READY_FOR_PICKUP", "timestamp": ord_date + datetime.timedelta(hours=1), "note": "All items packed and sealed. Ready for pickup.", "updated_by": "Rajesh Sharma"})
+        if cur_status in ['ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']:
+            history.append({"status": "ASSIGNED", "timestamp": ord_date + datetime.timedelta(hours=1, minutes=15), "note": "Assigned to Amit Kumar (+91 98980 11223).", "updated_by": "Rajesh Sharma"})
+        if cur_status in ['PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']:
+            history.append({"status": "PICKED_UP", "timestamp": ord_date + datetime.timedelta(hours=2), "note": "Picked up from pharmacy hub by Amit Kumar.", "updated_by": "Amit Kumar"})
         if cur_status in ['OUT_FOR_DELIVERY', 'DELIVERED']:
-            history.append({"status": "OUT_FOR_DELIVERY", "timestamp": ord_date + datetime.timedelta(hours=22), "note": "Delivery executive is out for delivery in your area."})
+            history.append({"status": "OUT_FOR_DELIVERY", "timestamp": ord_date + datetime.timedelta(hours=3), "note": "Out for delivery. Arriving shortly.", "updated_by": "Amit Kumar"})
         if cur_status == 'DELIVERED':
-            history.append({"status": "DELIVERED", "timestamp": ord_date + datetime.timedelta(hours=24), "note": "Delivered and signed by recipient."})
+            history.append({"status": "DELIVERED", "timestamp": ord_date + datetime.timedelta(hours=4), "note": "Delivered to recipient via OTP verification.", "updated_by": "Amit Kumar"})
+        if cur_status == 'CANCELLED':
+            history.append({"status": "CANCELLED", "timestamp": ord_date + datetime.timedelta(minutes=30), "note": "Customer requested order cancellation.", "updated_by": "Customer"})
+
+        has_partner = cur_status in ['ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']
+        partner_obj = rider_partner_info if has_partner else None
+        partner_id = str(delivery_rider['_id']) if has_partner and delivery_rider else None
+
+        packed_count = sum(1 for it in items_list if it.get('packed'))
+        otp_val = f"{random.randint(1000, 9999)}"
 
         ord_doc = {
             "order_number": ord_num,
@@ -843,16 +906,41 @@ def seed_database():
                 "postal_code": "400050",
                 "country": "India"
             },
+            "pincode": "400050",
+            "city": "Mumbai",
+            "state": "Maharashtra",
             "prescription_id": rx_ids[0] if any(it['prescription_required'] for it in items_list) else None,
+            "prescription_required": any(it['prescription_required'] for it in items_list),
             "payment_method": "RAZORPAY" if i % 2 == 0 else "COD",
             "payment_status": "PAID" if (i % 2 == 0 or cur_status == 'DELIVERED') else "PENDING",
             "order_status": cur_status,
+            "delivery_partner": partner_obj,
+            "delivery_partner_id": partner_id,
+            "delivery_otp": otp_val,
+            "packing_status": {
+                "is_fully_packed": is_packed,
+                "packed_count": packed_count,
+                "total_items": len(items_list),
+                "packed_items": []
+            },
+            "timestamps": {
+                "orderPlacedAt": ord_date,
+                "confirmedAt": ord_date + datetime.timedelta(minutes=5),
+                "packingStartedAt": ord_date + datetime.timedelta(minutes=20) if cur_status in ['PACKING', 'READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'] else None,
+                "readyForPickupAt": ord_date + datetime.timedelta(hours=1) if cur_status in ['READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'] else None,
+                "assignedAt": ord_date + datetime.timedelta(hours=1, minutes=15) if has_partner else None,
+                "pickedUpAt": ord_date + datetime.timedelta(hours=2) if cur_status in ['PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'] else None,
+                "outForDeliveryAt": ord_date + datetime.timedelta(hours=3) if cur_status in ['OUT_FOR_DELIVERY', 'DELIVERED'] else None,
+                "deliveredAt": ord_date + datetime.timedelta(hours=4) if cur_status == 'DELIVERED' else None,
+                "cancelledAt": ord_date + datetime.timedelta(minutes=30) if cur_status == 'CANCELLED' else None
+            },
             "subtotal_mrp": round(sub_mrp, 2),
             "subtotal_selling": round(sub_selling, 2),
             "mrp_savings": round(max(0, sub_mrp - sub_selling), 2),
             "coupon_code": "HEALTH10" if coupon_disc > 0 else None,
             "coupon_discount": round(coupon_disc, 2),
             "delivery_fee": round(del_fee, 2),
+            "tax": 0.0,
             "total_savings": round(max(0, sub_mrp - sub_selling) + coupon_disc, 2),
             "total_amount": round(tot, 2),
             "customer_notes": "Please deliver between 10am-5pm.",
@@ -863,7 +951,7 @@ def seed_database():
         orders_data.append(ord_doc)
 
     res_orders = db.orders.insert_many(orders_data)
-    print(f"✅ Seeded {len(orders_data)} Orders with logistics tracking histories.")
+    print(f"✅ Seeded {len(orders_data)} Orders across all workflow stages.")
 
     # 8. REVIEWS (10 Verified Reviews)
     reviews_data = [

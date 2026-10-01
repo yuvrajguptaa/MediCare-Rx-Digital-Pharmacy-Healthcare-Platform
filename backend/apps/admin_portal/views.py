@@ -33,6 +33,21 @@ class AdminDashboardStatsView(APIView):
         rev_res = list(db.orders.aggregate(pipeline_revenue))
         total_revenue = rev_res[0]['total'] if rev_res else 0.0
 
+        today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Detailed Order Metrics for Dashboard & Logistics
+        pending_orders = db.orders.count_documents({'order_status': {'$in': ['PENDING', 'PLACED']}})
+        orders_to_pack = db.orders.count_documents({'order_status': {'$in': ['CONFIRMED', 'PACKING', 'PREPARING']}})
+        ready_for_pickup = db.orders.count_documents({'order_status': 'READY_FOR_PICKUP'})
+        assigned_orders = db.orders.count_documents({'order_status': 'ASSIGNED'})
+        out_for_delivery = db.orders.count_documents({'order_status': {'$in': ['PICKED_UP', 'OUT_FOR_DELIVERY']}})
+        delivered_today = db.orders.count_documents({
+            'order_status': 'DELIVERED',
+            'timestamps.deliveredAt': {'$gte': today_start}
+        })
+        total_delivered = db.orders.count_documents({'order_status': 'DELIVERED'})
+        cancelled_orders = db.orders.count_documents({'order_status': 'CANCELLED'})
+
         pending_prescriptions = db.prescriptions.count_documents({'status': 'PENDING'})
         low_stock_count = db.medicines.count_documents({'stock': {'$lte': 10, '$gt': 0}, 'is_active': True})
         out_of_stock_count = db.medicines.count_documents({'stock': 0, 'is_active': True})
@@ -62,6 +77,14 @@ class AdminDashboardStatsView(APIView):
                 'total_medicines': total_medicines,
                 'total_orders': total_orders,
                 'total_revenue': round(total_revenue, 2),
+                'pending_orders': pending_orders,
+                'orders_to_pack': orders_to_pack,
+                'ready_for_pickup': ready_for_pickup,
+                'assigned_orders': assigned_orders,
+                'out_for_delivery': out_for_delivery,
+                'delivered_today': delivered_today,
+                'total_delivered': total_delivered,
+                'cancelled_orders': cancelled_orders,
                 'pending_prescriptions': pending_prescriptions,
                 'low_stock_count': low_stock_count,
                 'out_of_stock_count': out_of_stock_count
@@ -674,7 +697,7 @@ class AdminCategoryDetailView(APIView):
         db.categories.delete_one({'_id': oid})
         return Response({'message': 'Category deleted.'}, status=status.HTTP_200_OK)
 
-# --- ORDERS MANAGEMENT ---
+# --- ORDERS & PACKING & LOGISTICS MANAGEMENT ---
 
 class AdminOrdersListView(APIView):
     permission_classes = [IsPharmacistOrAdminUserMongo]
@@ -682,11 +705,49 @@ class AdminOrdersListView(APIView):
     def get(self, request):
         db = get_db()
         status_filter = request.GET.get('status', '').upper()
+        payment_filter = request.GET.get('payment_status', '').upper()
         search = request.GET.get('search', '').strip()
+        sort_by = request.GET.get('sort', 'newest').lower()
+        date_from = request.GET.get('date_from', '').strip()
+        date_to = request.GET.get('date_to', '').strip()
+
+        try:
+            page = max(1, int(request.GET.get('page', 1)))
+        except (ValueError, TypeError):
+            page = 1
+        try:
+            limit = max(1, min(200, int(request.GET.get('limit', 25))))
+        except (ValueError, TypeError):
+            limit = 25
+        skip = (page - 1) * limit
 
         query = {}
-        if status_filter in ['PLACED', 'CONFIRMED', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']:
-            query['order_status'] = status_filter
+
+        if status_filter in ['PENDING', 'PLACED', 'CONFIRMED', 'PACKING', 'PREPARING', 'READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'REFUNDED']:
+            if status_filter == 'PACKING' or status_filter == 'PREPARING':
+                query['order_status'] = {'$in': ['PACKING', 'PREPARING']}
+            elif status_filter == 'PENDING' or status_filter == 'PLACED':
+                query['order_status'] = {'$in': ['PENDING', 'PLACED']}
+            else:
+                query['order_status'] = status_filter
+
+        if payment_filter in ['PAID', 'PENDING', 'FAILED', 'REFUNDED']:
+            query['payment_status'] = payment_filter
+
+        if date_from or date_to:
+            date_query = {}
+            if date_from:
+                try:
+                    date_query['$gte'] = datetime.datetime.strptime(date_from, '%Y-%m-%d')
+                except ValueError:
+                    pass
+            if date_to:
+                try:
+                    date_query['$lte'] = datetime.datetime.strptime(date_to, '%Y-%m-%d') + datetime.timedelta(days=1)
+                except ValueError:
+                    pass
+            if date_query:
+                query['created_at'] = date_query
 
         if search:
             regex_s = {'$regex': re.escape(search), '$options': 'i'}
@@ -694,20 +755,91 @@ class AdminOrdersListView(APIView):
                 {'order_number': regex_s},
                 {'customer_name': regex_s},
                 {'customer_email': regex_s},
-                {'customer_phone': regex_s}
+                {'customer_phone': regex_s},
+                {'pincode': regex_s},
+                {'city': regex_s}
             ]
 
-        orders = list(db.orders.find(query).sort('created_at', -1).limit(100))
-        return Response({'orders': serialize_doc(orders)}, status=status.HTTP_200_OK)
+        # Sorting
+        sort_field = [('created_at', -1)]
+        if sort_by == 'oldest':
+            sort_field = [('created_at', 1)]
+        elif sort_by == 'amount_desc':
+            sort_field = [('total_amount', -1)]
+        elif sort_by == 'amount_asc':
+            sort_field = [('total_amount', 1)]
+
+        total_count = db.orders.count_documents(query)
+        total_pages = max(1, (total_count + limit - 1) // limit)
+        orders = list(db.orders.find(query).sort(sort_field).skip(skip).limit(limit))
+
+        # Status counts for tab badges
+        counts = {
+            'all': db.orders.count_documents({}),
+            'pending': db.orders.count_documents({'order_status': {'$in': ['PENDING', 'PLACED']}}),
+            'confirmed': db.orders.count_documents({'order_status': 'CONFIRMED'}),
+            'packing': db.orders.count_documents({'order_status': {'$in': ['PACKING', 'PREPARING']}}),
+            'ready_for_pickup': db.orders.count_documents({'order_status': 'READY_FOR_PICKUP'}),
+            'assigned': db.orders.count_documents({'order_status': 'ASSIGNED'}),
+            'picked_up': db.orders.count_documents({'order_status': 'PICKED_UP'}),
+            'out_for_delivery': db.orders.count_documents({'order_status': 'OUT_FOR_DELIVERY'}),
+            'delivered': db.orders.count_documents({'order_status': 'DELIVERED'}),
+            'cancelled': db.orders.count_documents({'order_status': 'CANCELLED'}),
+        }
+
+        return Response({
+            'orders': serialize_doc(orders),
+            'counts': counts,
+            'pagination': {
+                'total': total_count,
+                'page': page,
+                'limit': limit,
+                'totalPages': total_pages
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class AdminOrderDetailView(APIView):
+    """Returns single order full details for admin/pharmacist."""
+    permission_classes = [IsPharmacistOrAdminUserMongo]
+
+    def get(self, request, pk):
+        db = get_db()
+        oid = to_object_id(pk)
+        query = {'_id': oid} if oid else {'order_number': pk}
+        order = db.orders.find_one(query)
+
+        if not order:
+            return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Payment details
+        payment = db.payments.find_one({'order_id': str(order['_id'])})
+        # Prescription details if linked
+        rx = None
+        if order.get('prescription_id'):
+            rx_oid = to_object_id(order['prescription_id'])
+            if rx_oid:
+                rx = db.prescriptions.find_one({'_id': rx_oid})
+
+        res_data = serialize_doc(order)
+        res_data['payment_details'] = serialize_doc(payment)
+        res_data['prescription_doc'] = serialize_doc(rx)
+
+        return Response({'order': res_data}, status=status.HTTP_200_OK)
+
 
 class AdminOrderStatusUpdateView(APIView):
     permission_classes = [IsPharmacistOrAdminUserMongo]
 
     def post(self, request, pk):
         new_status = request.data.get('order_status', '').upper()
-        note = request.data.get('note', '').strip()
+        note = (request.data.get('note') or '').strip()
 
-        valid_statuses = ['PLACED', 'CONFIRMED', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']
+        valid_statuses = [
+            'PENDING', 'PLACED', 'CONFIRMED', 'PACKING', 'PREPARING',
+            'READY_FOR_PICKUP', 'ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY',
+            'DELIVERED', 'CANCELLED', 'PAYMENT_FAILED', 'REFUND_INITIATED', 'REFUNDED'
+        ]
         if new_status not in valid_statuses:
             return Response({'error': f"Invalid status. Must be one of: {', '.join(valid_statuses)}"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -720,18 +852,35 @@ class AdminOrderStatusUpdateView(APIView):
             return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         now = datetime.datetime.utcnow()
-        status_entry = {
-            'status': new_status,
-            'timestamp': now,
-            'note': note or f"Order status updated to {new_status} by {request.user.role}."
-        }
-
         updates = {
             'order_status': new_status,
             'updated_at': now
         }
+
+        # Timestamp tracking
+        ts_field_map = {
+            'CONFIRMED': 'timestamps.confirmedAt',
+            'PACKING': 'timestamps.packingStartedAt',
+            'PREPARING': 'timestamps.packingStartedAt',
+            'READY_FOR_PICKUP': 'timestamps.readyForPickupAt',
+            'ASSIGNED': 'timestamps.assignedAt',
+            'PICKED_UP': 'timestamps.pickedUpAt',
+            'OUT_FOR_DELIVERY': 'timestamps.outForDeliveryAt',
+            'DELIVERED': 'timestamps.deliveredAt',
+            'CANCELLED': 'timestamps.cancelledAt'
+        }
+        if new_status in ts_field_map:
+            updates[ts_field_map[new_status]] = now
+
         if new_status == 'DELIVERED':
             updates['payment_status'] = 'PAID'
+
+        status_entry = {
+            'status': new_status,
+            'timestamp': now,
+            'note': note or f"Order status updated to {new_status} by {request.user.role} ({request.user.first_name}).",
+            'updated_by': f"{request.user.first_name} ({request.user.role})"
+        }
 
         db.orders.update_one(
             {'_id': order['_id']},
@@ -743,12 +892,13 @@ class AdminOrderStatusUpdateView(APIView):
 
         # Notify user
         status_icons = {
-            'CONFIRMED': '✅', 'PACKED': '📦', 'SHIPPED': '🚚',
-            'OUT_FOR_DELIVERY': '🛵', 'DELIVERED': '🎉', 'CANCELLED': '❌'
+            'CONFIRMED': '✅', 'PACKING': '📦', 'PREPARING': '📦', 'READY_FOR_PICKUP': '🏷️',
+            'ASSIGNED': '🛵', 'PICKED_UP': '🛵', 'OUT_FOR_DELIVERY': '🚀', 'DELIVERED': '🎉',
+            'CANCELLED': '❌', 'REFUNDED': '💰'
         }
         db.notifications.insert_one({
             'user_id': str(order.get('user_id')),
-            'title': f"Order #{order.get('order_number')} is {new_status.replace('_', ' ').capitalize()} {status_icons.get(new_status, '')}",
+            'title': f"Order #{order.get('order_number')} is {new_status.replace('_', ' ').title()} {status_icons.get(new_status, '')}",
             'message': note or f"Your order status has been updated to {new_status.replace('_', ' ').title()}.",
             'type': 'ORDER',
             'is_read': False,
@@ -758,6 +908,267 @@ class AdminOrderStatusUpdateView(APIView):
 
         updated = db.orders.find_one({'_id': order['_id']})
         return Response({'message': 'Order status updated successfully.', 'order': serialize_doc(updated)}, status=status.HTTP_200_OK)
+
+    patch = post
+
+
+class AdminPackingUpdateView(APIView):
+    """Allows admin/store staff to check off individual items in an order's packing list."""
+    permission_classes = [IsPharmacistOrAdminUserMongo]
+
+    def post(self, request, pk):
+        item_index = request.data.get('item_index')  # 0-indexed int
+        packed_val = bool(request.data.get('packed', True))
+
+        db = get_db()
+        oid = to_object_id(pk)
+        query = {'_id': oid} if oid else {'order_number': pk}
+        order = db.orders.find_one(query)
+
+        if not order:
+            return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        items = order.get('items', [])
+        if item_index is None or not (0 <= int(item_index) < len(items)):
+            return Response({'error': 'Invalid item index.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        idx = int(item_index)
+        items[idx]['packed'] = packed_val
+
+        # Recalculate packing status
+        packed_count = sum(1 for it in items if it.get('packed'))
+        total_items = len(items)
+        is_fully_packed = (packed_count == total_items)
+
+        now = datetime.datetime.utcnow()
+        updates = {
+            'items': items,
+            'packing_status.packed_count': packed_count,
+            'packing_status.total_items': total_items,
+            'packing_status.is_fully_packed': is_fully_packed,
+            'updated_at': now
+        }
+
+        # If starting packing and current status is CONFIRMED, advance to PACKING
+        if order.get('order_status') == 'CONFIRMED' and packed_count > 0:
+            updates['order_status'] = 'PACKING'
+            updates['timestamps.packingStartedAt'] = now
+            status_entry = {
+                'status': 'PACKING',
+                'timestamp': now,
+                'note': f"Store staff ({request.user.first_name}) started packing items.",
+                'updated_by': request.user.first_name
+            }
+            db.orders.update_one({'_id': order['_id']}, {'$push': {'status_history': status_entry}})
+
+        db.orders.update_one({'_id': order['_id']}, {'$set': updates})
+        updated = db.orders.find_one({'_id': order['_id']})
+
+        return Response({
+            'message': f"Item '{items[idx].get('name')}' marked as {'packed' if packed_val else 'unpacked'}.",
+            'order': serialize_doc(updated)
+        }, status=status.HTTP_200_OK)
+
+    patch = post
+
+
+class AdminMarkReadyForPickupView(APIView):
+    """Marks an order as READY_FOR_PICKUP once all items are confirmed packed."""
+    permission_classes = [IsPharmacistOrAdminUserMongo]
+
+    def post(self, request, pk):
+        force = bool(request.data.get('force', False))
+
+        db = get_db()
+        oid = to_object_id(pk)
+        query = {'_id': oid} if oid else {'order_number': pk}
+        order = db.orders.find_one(query)
+
+        if not order:
+            return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        items = order.get('items', [])
+        unpacked_items = [it.get('name') for it in items if not it.get('packed')]
+
+        if unpacked_items and not force:
+            return Response({
+                'error': f"Cannot mark ready for pickup. {len(unpacked_items)} item(s) are not marked as packed: {', '.join(unpacked_items[:3])}",
+                'unpacked_items': unpacked_items
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark all items as packed
+        for it in items:
+            it['packed'] = True
+
+        now = datetime.datetime.utcnow()
+        staff_name = f"{request.user.first_name} {request.user.last_name}".strip()
+
+        updates = {
+            'items': items,
+            'order_status': 'READY_FOR_PICKUP',
+            'packing_status.is_fully_packed': True,
+            'packing_status.packed_count': len(items),
+            'packing_status.total_items': len(items),
+            'packing_status.packed_by': staff_name,
+            'timestamps.readyForPickupAt': now,
+            'updated_at': now
+        }
+
+        status_entry = {
+            'status': 'READY_FOR_PICKUP',
+            'timestamp': now,
+            'note': f"All items verified and sealed in express pharmacy package by {staff_name}. Ready for courier pickup.",
+            'updated_by': staff_name
+        }
+
+        db.orders.update_one(
+            {'_id': order['_id']},
+            {
+                '$set': updates,
+                '$push': {'status_history': status_entry}
+            }
+        )
+
+        # Notify customer
+        db.notifications.insert_one({
+            'user_id': str(order.get('user_id')),
+            'title': f"Order #{order.get('order_number')} Packed & Ready! 🏷️",
+            'message': f"Your package has been packed securely and is ready for courier dispatch.",
+            'type': 'ORDER',
+            'is_read': False,
+            'link': f"/orders/{str(order['_id'])}",
+            'created_at': now
+        })
+
+        updated = db.orders.find_one({'_id': order['_id']})
+        return Response({
+            'message': 'Order successfully marked as Ready for Pickup.',
+            'order': serialize_doc(updated)
+        }, status=status.HTTP_200_OK)
+
+    patch = post
+
+
+class AdminDeliveryPartnersListView(APIView):
+    """Returns list of delivery partners with current active delivery load."""
+    permission_classes = [IsPharmacistOrAdminUserMongo]
+
+    def get(self, request):
+        db = get_db()
+        riders = list(db.users.find({'role': 'DELIVERY_PARTNER', 'is_active': True}))
+
+        rider_list = []
+        for r in riders:
+            r_id = str(r['_id'])
+            # Count active orders currently assigned to this rider
+            active_count = db.orders.count_documents({
+                'delivery_partner_id': r_id,
+                'order_status': {'$in': ['ASSIGNED', 'READY_FOR_PICKUP', 'PICKED_UP', 'OUT_FOR_DELIVERY']}
+            })
+            rider_list.append({
+                'id': r_id,
+                '_id': r_id,
+                'name': f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or r.get('email', ''),
+                'email': r.get('email', ''),
+                'phone': r.get('phone', '+91 98000 00000'),
+                'active_deliveries': active_count,
+                'status': 'ON_DELIVERY' if active_count > 0 else 'AVAILABLE',
+                'vehicle': r.get('vehicle', 'Motorcycle / Scooter')
+            })
+
+        return Response({'delivery_partners': rider_list}, status=status.HTTP_200_OK)
+
+
+class AdminAssignDeliveryPartnerView(APIView):
+    """Assigns an order to a delivery partner."""
+    permission_classes = [IsPharmacistOrAdminUserMongo]
+
+    def post(self, request, pk):
+        rider_id = request.data.get('delivery_partner_id')
+        if not rider_id:
+            return Response({'error': 'Delivery partner ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        db = get_db()
+        rider_oid = to_object_id(rider_id)
+        rider_user = db.users.find_one({'_id': rider_oid, 'role': 'DELIVERY_PARTNER'})
+        if not rider_user:
+            return Response({'error': 'Delivery partner not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        oid = to_object_id(pk)
+        query = {'_id': oid} if oid else {'order_number': pk}
+        order = db.orders.find_one(query)
+
+        if not order:
+            return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        now = datetime.datetime.utcnow()
+        rider_name = f"{rider_user.get('first_name', '')} {rider_user.get('last_name', '')}".strip() or rider_user.get('email', '')
+        rider_phone = rider_user.get('phone', '+91 98000 00000')
+
+        partner_info = {
+            'id': str(rider_user['_id']),
+            'name': rider_name,
+            'phone': rider_phone,
+            'email': rider_user.get('email', ''),
+            'vehicle': rider_user.get('vehicle', 'Motorcycle / Express Runner')
+        }
+
+        updates = {
+            'delivery_partner': partner_info,
+            'delivery_partner_id': str(rider_user['_id']),
+            'timestamps.assignedAt': now,
+            'updated_at': now
+        }
+
+        # If currently in READY_FOR_PICKUP or CONFIRMED, advance to ASSIGNED
+        if order.get('order_status') in ['CONFIRMED', 'PACKING', 'PREPARING', 'READY_FOR_PICKUP']:
+            updates['order_status'] = 'ASSIGNED'
+
+        status_entry = {
+            'status': 'ASSIGNED',
+            'timestamp': now,
+            'note': f"Assigned to delivery partner {rider_name} ({rider_phone}).",
+            'updated_by': request.user.first_name
+        }
+
+        db.orders.update_one(
+            {'_id': order['_id']},
+            {
+                '$set': updates,
+                '$push': {'status_history': status_entry}
+            }
+        )
+
+        # Notify Delivery Partner
+        db.notifications.insert_one({
+            'user_id': str(rider_user['_id']),
+            'title': f"New Delivery Assigned! 📦",
+            'message': f"Order #{order.get('order_number')} ({order.get('shipping_address', {}).get('city', '')}) has been assigned to you for delivery.",
+            'type': 'ORDER',
+            'is_read': False,
+            'link': f"/delivery/orders/{str(order['_id'])}",
+            'created_at': now
+        })
+
+        # Notify Customer
+        db.notifications.insert_one({
+            'user_id': str(order.get('user_id')),
+            'title': f"Delivery Partner Assigned! 🛵",
+            'message': f"{rider_name} will be delivering your order #{order.get('order_number')}.",
+            'type': 'ORDER',
+            'is_read': False,
+            'link': f"/orders/{str(order['_id'])}",
+            'created_at': now
+        })
+
+        updated = db.orders.find_one({'_id': order['_id']})
+        return Response({
+            'message': f"Order assigned to {rider_name}.",
+            'order': serialize_doc(updated)
+        }, status=status.HTTP_200_OK)
+
+    patch = post
+
 
 # --- COUPONS CRUD ---
 

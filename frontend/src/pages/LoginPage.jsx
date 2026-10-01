@@ -26,7 +26,11 @@ export default function LoginPage() {
       const user = await login(email, password);
       showToast(`Welcome back, ${user.first_name || 'User'}!`, 'success');
       
-      const from = location.state?.from?.pathname || (user.role === 'ADMIN' ? '/admin' : '/');
+      const from = location.state?.from?.pathname || (
+        user.role === 'ADMIN' ? '/admin' :
+        user.role === 'DELIVERY_PARTNER' ? '/delivery' :
+        '/'
+      );
       navigate(from, { replace: true });
     } catch (err) {
       showToast(err.response?.data?.error || 'Invalid email or password', 'error');
@@ -58,7 +62,7 @@ export default function LoginPage() {
             </div>
           </Link>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Sign in to MediCare</h2>
-          <p className="text-xs text-slate-500">Access your digital pharmacy vault, orders & prescriptions</p>
+          <p className="text-xs text-slate-500">Access your digital pharmacy vault, orders & logistics portal</p>
         </div>
 
         {/* Demo Quick Logins Box */}
@@ -67,25 +71,32 @@ export default function LoginPage() {
             <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
             Quick Demo 1-Click Login:
           </span>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
             <button
               type="button"
               onClick={() => handleQuickDemoFill('user@medicare.com', 'Customer')}
-              className="px-2 py-1.5 bg-white border border-emerald-300 rounded-lg font-bold text-emerald-800 text-[11px] hover:bg-emerald-100 transition-colors"
+              className="px-2 py-1.5 bg-white border border-emerald-300 rounded-lg font-bold text-emerald-800 text-[11px] hover:bg-emerald-100 transition-colors text-center"
             >
               Customer
             </button>
             <button
               type="button"
               onClick={() => handleQuickDemoFill('pharmacist@medicare.com', 'Pharmacist')}
-              className="px-2 py-1.5 bg-white border border-sky-300 rounded-lg font-bold text-sky-800 text-[11px] hover:bg-sky-100 transition-colors"
+              className="px-2 py-1.5 bg-white border border-sky-300 rounded-lg font-bold text-sky-800 text-[11px] hover:bg-sky-100 transition-colors text-center"
             >
               Pharmacist
             </button>
             <button
               type="button"
+              onClick={() => handleQuickDemoFill('delivery@medicare.com', 'Delivery Partner')}
+              className="px-2 py-1.5 bg-white border border-indigo-300 rounded-lg font-bold text-indigo-800 text-[11px] hover:bg-indigo-100 transition-colors text-center"
+            >
+              Delivery Rider
+            </button>
+            <button
+              type="button"
               onClick={() => handleQuickDemoFill('admin@medicare.com', 'Admin')}
-              className="px-2 py-1.5 bg-white border border-amber-300 rounded-lg font-bold text-amber-800 text-[11px] hover:bg-amber-100 transition-colors"
+              className="px-2 py-1.5 bg-white border border-amber-300 rounded-lg font-bold text-amber-800 text-[11px] hover:bg-amber-100 transition-colors text-center"
             >
               Admin
             </button>
